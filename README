@@ -1,0 +1,85 @@
+USMB2 for Z80
+-------------
+A tiny TCP/IP implementation for Z80 as well as an example
+application that uses USMB2 to access a network share.
+
+The makefile builds a tap file that can be loaded into
+a sinclair spectrum that has an interface1 with RS-232.
+
+The stack uses a slightly modified version of the SLIP
+protocol to talk to a daemon that then bridges the packets
+to a tun0 network on linux.
+The difference to normal SLIP is that I have to escape also
+bytes with the value 0x00.
+
+Bytes with the value 0x00 are apparently problematic on IF1
+so that is why this workaround is needed.
+It is not clear if this workaround is needed on other
+interfaces too but it does no harm. Except that we are technically
+not compatible with other SLIP implementations any more.
+
+FUSE Spectrum Interface1 bug
+----------------------------
+I think there is a bug in the FUSE emulator where it does not handle
+the byte 0x00 correctly on rx or tx.
+Rx of 0x00 is simply stripped while tx of 0x00 is replaced by the two byte
+sequence 0x00 + 0x2a.
+
+When compiling for FUSE Spectrum Interface1 you must define
+SLIP_ESC_00 as this will modify the SLIP protocol to also escape the 0x00
+characters.
+This makes it no longer compatible with standards compliant SLIP implementations
+but what can you do.
+
+Use this define when compiling for FUSE Spectrum Interface1   and hook it up
+via slip-tun.c as it has the same workaround for this issue.
+
+
+
+Building
+--------
+<set up Z88DK environment>
+cd z80
+make clean
+make
+
+
+slip-tun
+========
+slip-tun is a small utility that can act as a network bridge
+between a tun interface and the rx/tx channels from the
+spectrum serial port.
+
+When running on an emulated system (FUSE, Spectrum48k + Interface1)
+this would be two fifos, one for RX and one for TX to the spectrum.
+For a physical spectrum48k, this would be the serial port where
+the speccy is connected to the host.
+
+Example:
+# In first console :
+gcc slip-tun.c -o slip-tun -DSLIP_ESC_00
+rm -f /tmp/rx /tmp/tx
+mkfifo /tmp/rx
+mkfifo /tmp/tx
+sudo ./slip-tun tun0 /tmp/rx /tmp/tx
+
+# In a second console
+sudo fuse --rs232-tx=/tmp/tx --rs232-rx=/tmp/rx
+
+
+Network trace of spectrum48 using SMB2
+======================================
+See ../speccy-mapping-a-share.pcapng for an example of
+a spectrum 48k + interface1 accessing a network share.
+
+
+ping
+====
+A simple example program that just pings a remote host.
+
+smb2-cat
+========
+An example program that connects to a remote smb2 file server,
+authenticates, maps a share, then reads a simple file.
+All names,passwords,files,... are hardcoded.
+
