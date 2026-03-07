@@ -23,48 +23,61 @@
  * DEALINGS IN THE SOFTWARE.
  */
 #include <arch/zx.h>
+#include <net/hton.h>
 #include <stdio.h>
 #include <rs232.h>
 
 #include "slip.h"
 #include "ip.h"
-#include "icmp.h"
+#include "tcp.h"
 
-uint8_t icmp_buf[ICMP_BUF_SIZE];
-ip_context_t ip_ctx = {
-        .pkt_size = ICMP_BUF_SIZE,
-        .pkt = icmp_buf,
+#define BUF_SIZE (20 + 20 + 512)
+
+uint8_t tcp_buf[BUF_SIZE];
+tcp_context_t tcp = {
+        .ip = {
+                .pkt_size = BUF_SIZE,
+                .pkt = tcp_buf,
+        },
 };
 
 
 int main(void)
 {
-        int rc;
+        int rc, i;
         int ipi[4];
         uint8_t *ip;
 
         zx_cls();
-        ip_ctx.saddr = 0x020200c0; /* 192.0.2.2 */
+        tcp.ip.saddr = 0x020200c0; /* 192.0.2.2 */
         
-        ip = (uint8_t *)&ip_ctx.saddr;
+        ip = (uint8_t *)&tcp.ip.saddr;
         printf("My IP ADDRESS: %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
-        
-        printf("IP ADDRESS to ping: ");fflush(stdout);
+        printf("IP ADDRESS for echo server: ");fflush(stdout);
         scanf("%d.%d.%d.%d\n", &ipi[0], &ipi[1], &ipi[2], &ipi[3]);
-        ip = (uint8_t *)&ip_ctx.daddr;
+        ip = (uint8_t *)&tcp.ip.daddr;
         ip[0] = ipi[0];
         ip[1] = ipi[1];
         ip[2] = ipi[2];
         ip[3] = ipi[3];
         printf("\n");
 
+        tcp.src_port = htons(32768);
+        tcp.dst_port = htons(31337);
+
         slip_init(RS_BAUD_19200, RS_PAR_NONE);
-        rc = icmp_echo_request(&ip_ctx);
-        if (rc == 0) {
-                printf("%d.%d.%d.%d is alive\n", ip[0], ip[1], ip[2], ip[3]);
-        } else {
-                printf("No response from %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
+        rc = tcp_connect(&tcp);
+        printf("connect rc:%d\n", rc);
+        while(1) {
+                rc = tcp_recv(tcp, 64);
+                printf("recv rc:%d\n", rc);
+                if (rc > 0) {
+                        for(i = 0; i < rc; i++) {
+                                putchar(tcp_rx_buffer(tcp)[i]);
+                        }
+                }
         }
+        printf("done\n");
         return 0;
 }
 
