@@ -130,7 +130,7 @@ Keyboard:
 * `ip.c/h`   — IP header construction
 * `icmp.c/h` — ICMP (only needed by `ping.c`)
 * `tcp.c/h`  — minimal single-connection, single-buffer TCP
-* `ping.c`, `tcp_chat.c` — the Spectrum applications
+* `ping.c`, `tcp_chat.c`, `irc.c` — the Spectrum applications
 * `slip-tun.c` — Linux-side SLIP<->tun bridge
 * `test/` — host-side tests, run with `make test` (plain gcc, no z88dk needed)
 
@@ -140,11 +140,21 @@ with `tcp_recv_timeout(..., POLL_TICKS)` so that typing and receiving happen
 at the same time. The bottom screen row is the input line, the rows above it
 are the chat log.
 
+`irc.c` is a minimal IRC client built the same way (see `README.irc` for the
+subset it implements and for servers to test against). Two things differ from
+`tcp_chat.c`: incoming data is reassembled into whole protocol lines before it
+is parsed, and nothing is transmitted from inside that parsing — the PONG and
+the auto-JOIN are recorded as pending and sent afterwards from
+`flush_pending()`, because `tcp_rx_buffer()` points into the same single
+packet buffer that `tcp_send()` would overwrite.
+
 ## Testing without a Spectrum
 
-`make test` builds `test/test_screen.c` with the native gcc. It mocks the
-z88dk console driver (same control codes, wrapping and scroll semantics as
-`fputc_cons_generic.inc`) and `#include`s `tcp_chat.c` itself — `putchar`,
+`make test` builds `test/test_screen.c` and `test/test_irc.c` with the native
+gcc (`test_irc.c` includes `irc.c` the same way and additionally covers the
+IRC parsing and the commands). They mock the z88dk console driver (same
+control codes, wrapping and scroll semantics as
+`fputc_cons_generic.inc`) and `#include` the application itself — `putchar`,
 `printf` and `main` are `#define`d away around the include, and `test/stub/`
 supplies the z88dk headers (`arch/zx.h`, `input.h`, `net/hton.h`, `rs232.h`).
 This is the cheap way to check screen/input logic; it does not exercise any

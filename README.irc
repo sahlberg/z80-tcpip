@@ -1,0 +1,297 @@
+A tiny IRC client for the ZX Spectrum
+=====================================
+irc.c is an IRC client built on top of this stack, in the same style as
+tcp_chat.c: the bottom line of the screen is what you type on and the 23
+lines above it are the log.
+
+The full IRC protocol is far too much for a 48k Spectrum that talks to
+the world through a bit banged serial port, so this implements only the
+handful of messages you need to join a channel and talk on it. Anything
+it does not understand is simply printed as it arrived, and /raw lets you
+send any command the server understands even if the client does not.
+
+Building and running
+====================
+  . /data/sahlberg/z88dk/zcc-setup.sh
+  make irc.bin
+
+which also produces irc.tap. Then, as for every other program here:
+
+  ./NET.sh                                    # console 1, needs sudo
+  fuse --rs232-tx=/tmp/tx --rs232-rx=/tmp/rx  # console 2
+
+and load irc.tap in FUSE. NET.sh is what sets up the forwarding and the
+masquerading, without it the Spectrum can only reach 192.0.2.1.
+
+
+Starting up
+===========
+The program asks four questions before it connects:
+
+  IRC server IP:            a naked IP address, see below
+  Port [6667]:              empty means 6667
+  Nick:                     your nick, at most 16 characters
+  Channel (empty for none): joined automatically once registered
+
+Then it connects, sends NICK and USER, and drops into the chat screen.
+Type /help to get the command list on the screen.
+
+CAPS SHIFT + SYMBOL SHIFT + C quits (it sends a QUIT first). CAPS SHIFT
++ 0, or CAPS SHIFT + 5, is backspace. Do not expect the keyboard to be
+fast: the program is inside the serial port nearly all of the time and
+only looks at the keyboard about 40 times a second.
+
+
+There is no name resolution
+===========================
+This stack has no DNS, no resolver and no hosts file, so the server has
+to be given as a naked IP address. Look it up on the Linux host first:
+
+  $ host irc.libera.chat
+  irc.libera.chat has address 93.158.237.2
+  irc.libera.chat has address 130.185.232.126
+  ...
+
+Note that the round robin above is exactly what DNS is there for. The
+addresses change, servers get rotated out, and the one you wrote down
+last month may well be gone today. If a connect fails, resolve the name
+again before assuming the program is broken.
+
+The same goes for the other direction: several networks look up the
+reverse DNS of the address you connect from and some of them refuse
+connections that have none. Since we come out of slip-tun's masquerading
+we appear as the Linux host, so that is normally fine.
+
+
+Commands
+========
+Anything that does not start with a / is said on the channel you are
+currently on.
+
+  /join #channel     join a channel, and make it the current one
+                     (/j is a synonym)
+  /part [reason]     leave the current channel
+  /nick name         change your nick
+  /msg nick text     send a private message (/m is a synonym)
+  /me action         send a CTCP ACTION, i.e. "* nick waves"
+  /names [#channel]  list who is on the channel
+  /topic [text]      show the topic, or set it if text is given
+  /raw command       send a raw IRC command, e.g. "/raw WHOIS bob"
+                     (/quote is a synonym)
+  /quit [reason]     disconnect and exit
+  /help              print the list above
+
+The commands are case insensitive, so /JOIN works as well as /join.
+Everything else, /list, /whois, /away, /mode, /invite, /kick, ... is
+still available through /raw, you just have to read the reply as plain
+text. Do not use "/raw LIST" on a large network, it will send you tens
+of thousands of lines that the Spectrum has no chance of keeping up
+with.
+
+
+What you see
+============
+Messages are formatted like most other clients do:
+
+  <bob> hello there          something said on a channel
+  *bob* hello there          a private message sent to you
+  >bob< hello there          a private message you sent
+  -bob- hello there          a notice
+  * bob waves                a /me
+  * bob joined #zx           join, part, quit, nick, kick, topic, mode
+  *** connected. ...         messages from the client itself
+
+Numeric replies from the server (the welcome, the MOTD, the name list,
+all the error replies) are printed as plain text with your own nick
+stripped off the front. Anything the client does not know about is
+printed as the command name followed by its parameters.
+
+Only printable ASCII is ever put on the screen. That is not only for
+looks: the console driver treats several control codes as "take the next
+byte or two as my arguments", so a stray byte off the network could
+otherwise move the cursor or change the colours.
+
+
+Servers to test with
+====================
+1. Your own, on the Linux host. This is by far the best way to test.
+   ngircd is small, needs no configuration to speak of and is packaged
+   everywhere:
+
+     $ sudo dnf install ngircd          # or apt install ngircd
+     $ ngircd -n                        # -n = foreground, ^C to stop
+
+   The packaged /etc/ngircd/ngircd.conf is good enough as it is. It
+   listens on port 6667 on all addresses, so from the Spectrum
+   connect to 192.0.2.1 (that is slip-tun's end of the link, i.e. the
+   Linux host). Join the same channel with a normal client to talk to
+   yourself:
+
+     $ irssi -c 127.0.0.1 -p 6667
+
+   Everything stays on the machine, so you get the whole protocol at
+   full speed with no rate limits and nobody to annoy while you debug.
+
+2. ncat, if you want to see the protocol by hand. Run
+
+     $ ncat -l 6667
+
+   and connect the Spectrum to 192.0.2.1. You will see the NICK and USER
+   lines arrive, and whatever you type in the ncat window is fed to the
+   client as if it came from a server. Try typing
+
+     :bob!bob@example.com PRIVMSG #zx :hello spectrum
+     PING :test
+
+   Remember that the client only acts on a line once the newline has
+   arrived, and that it needs the 001 welcome numeric before it will
+   auto join the channel you asked for at startup:
+
+     :fake 001 yournick :Welcome
+
+3. A public network. These work, but they are not the place to debug.
+   Plaintext IRC on port 6667 is still offered by, among others,
+   Libera.Chat, OFTC, EFnet, IRCnet and Undernet. Resolve the name on
+   the host with "host <name>" as shown above and give the client the
+   address you get:
+
+     irc.libera.chat   irc.oftc.net   irc.efnet.org
+     open.ircnet.net   irc.undernet.org
+
+   Libera.Chat has a channel dedicated to retro and vintage computing,
+   which is the obvious place to try this client out. See the next
+   section for how to get there.
+
+   Things to expect out there:
+
+   - No TLS. This client speaks plaintext only, so port 6697 and any
+     network that has turned plaintext off is out of reach. Assume
+     everything you type is public.
+   - Connecting takes a while. Many servers do a reverse DNS lookup and
+     an ident lookup first, and the ident one only gives up after ten
+     seconds or so. The screen just sits there until the welcome
+     arrives.
+   - The MOTD is long. A hundred lines of text arriving at a machine
+     that has no serial receive buffer means a lot of retransmissions,
+     and it can take a while to settle down. That is normal, see the
+     note about the missing receive buffer in README.
+   - Registration may need more than we send. Some networks want SASL
+     or a server password before they let you in, and this client has
+     neither, though "/raw PASS ..." right after connecting can work.
+   - Flood protection. Sending several lines in quick succession can
+     get you disconnected with "Excess flood". The Spectrum is not
+     really capable of typing that fast.
+   - Channels are busy. Join something quiet like a channel of your own
+     rather than a channel with a thousand people in it, or the client
+     will spend all of its time drawing text.
+
+
+Chatting on #occlub, the retro channel on Libera.Chat
+=====================================================
+#occlub on Libera.Chat is dedicated to real time retro and vintage
+computing discussion, which makes it about the friendliest audience
+there is for a Spectrum that has just talked its way onto the internet
+through a serial port. You do not need a registered nick to join, and
+Libera.Chat still accepts plaintext connections, which this client
+needs since it cannot do TLS.
+
+  irc.libera.chat   plaintext on 6665-6667 and 8000-8002
+                    TLS on 6697, 7000 and 7070 (no use to us)
+
+1. Look the name up on the Linux host, since the Spectrum has no
+   resolver:
+
+     $ host irc.libera.chat
+     irc.libera.chat has address 93.158.237.2
+     irc.libera.chat has address 130.185.232.126
+     irc.libera.chat has address 108.181.132.149
+
+   Any one of them will do. It is a round robin, the addresses do
+   change, and the ones above are only what it answered when this was
+   written, so look it up yourself rather than copying them.
+
+2. Start the bridge and the emulator as usual:
+
+     $ ./NET.sh                                    # console 1, sudo
+     $ fuse --rs232-tx=/tmp/tx --rs232-rx=/tmp/rx  # console 2
+
+3. Load irc.tap and answer the four questions:
+
+     IRC server IP:            93.158.237.2  (whatever host printed)
+     Port [6667]:              press ENTER, 6667 is the default
+     Nick:                     what you want to be called, e.g. speccy48
+     Channel (empty for none): #occlub
+
+4. Now wait, and do not panic when nothing happens. A public server
+   takes its time before it lets you in:
+
+   - First a few notices scroll by, "*** Looking up your hostname" and
+     the like.
+   - Then nothing at all for ten seconds or so, while the server tries
+     an ident lookup that we never answer and eventually gives up on.
+   - Then the welcome (numeric 001) and the MOTD, which is a lot of
+     text for a machine with no serial receive buffer. It arrives
+     slowly and in fits and starts. That is expected.
+   - When that is over the client joins #occlub by itself, and you get
+     the topic and the list of who is there.
+
+5. Now just type, and press ENTER to send. Anything that does not start
+   with a / is said on the channel, and your own line is echoed back as
+   "<yournick> ...". The handful of commands worth knowing:
+
+     /names             who is on the channel right now
+     /me waves          sends "* yournick waves"
+     /msg nick hello    a private message to one person
+     /topic             show what the channel is about
+     /quit see you      leave (CAPS SHIFT + SYM SHIFT + C does the same)
+
+6. If somebody already has the nick you picked, the server refuses it
+   and you stay unregistered until you choose another one:
+
+     /nick speccy48b
+
+What to expect from the channel itself, if you have not used IRC before:
+
+* Silence is normal. IRC is not a messaging app. People stay connected
+  all day and answer when they come back to the keyboard, so a question
+  can sit there for hours before somebody replies. An empty looking
+  channel is not a broken connection, and /names will show you that
+  there are plenty of people in it.
+* Say what you are connecting from. A 48k Spectrum on a bit banged
+  serial line running a home made TCP stack is exactly the sort of
+  thing that channel exists for, and it explains in advance why you
+  type slowly and drop off now and then.
+* Everything is in the clear. Plaintext IRC means the SLIP link, the
+  Linux host and every hop after it can read what you type. Never type
+  a password into this client. If you want to register your nick with
+  NickServ, do it from a normal client over TLS on the host, not from
+  the Spectrum.
+* Expect to be dropped occasionally. When that happens the client says
+  so and exits, and you just load it again. Reconnecting is completely
+  normal on IRC and nobody will think anything of it.
+
+
+Limitations
+===========
+* One connection, one channel at a time. /join simply replaces the
+  current channel, it does not close the old one, so a JOIN that the
+  server refuses leaves you talking into a channel you are not on.
+* Lines from the server longer than 320 characters lose their tail.
+  Lines you type are limited to 100 characters.
+* No CTCP replies. VERSION, PING and friends sent to you are shown as
+  text and not answered.
+* No TLS, no SASL, no DCC, no colours, no logging, no scrollback and no
+  nick completion.
+* The client is polite about the one thing that matters, PING, and
+  ignores nearly everything else.
+
+
+Testing without a Spectrum
+==========================
+  make test
+
+builds and runs test/test_irc, which mocks the z88dk console driver and
+#includes irc.c so that the real code is tested: message formatting,
+line reassembly across segments, PING handling, the commands and the
+screen handling. It does not exercise any networking, which still needs
+FUSE and slip-tun.

@@ -2,7 +2,7 @@ CFILESNET = icmp.c ip.c slip.c tcp.c
 OFILESNET = $(CFILESNET:.c=.o)
 
 # Programs for the spectrum, built with z88dk
-PROGRAMS = ping.bin tcp_chat.bin
+PROGRAMS = ping.bin tcp_chat.bin irc.bin
 
 # Programs for the linux host, built with the native compiler
 HOSTPROGRAMS = slip-tun
@@ -19,6 +19,9 @@ ping.bin: ping.o $(OFILESNET)
 tcp_chat.bin: tcp_chat.o $(OFILESNET)
 	zcc +zx -o $@ tcp_chat.c $(OFILESNET) -lndos -lrs232if1 -create-app
 
+irc.bin: irc.o $(OFILESNET)
+	zcc +zx -o $@ irc.c $(OFILESNET) -lndos -lrs232if1 -create-app
+
 %.o: %.c
 	zcc +zx -o $@ -c $^ -I.. -DZ80 -DSLIP_ESC_00 -DRS232_TPS=80
 
@@ -26,15 +29,21 @@ tcp_chat.bin: tcp_chat.o $(OFILESNET)
 slip-tun: slip-tun.c
 	$(CC) $(CFLAGS) -DSLIP_ESC_00 -o $@ $<
 
-# Host side tests for the screen/input handling in tcp_chat.c.
-# test/stub/ has just enough of the z88dk headers to build it here.
+# Host side tests for the screen/input handling in tcp_chat.c and for the
+# screen/input/protocol handling in irc.c.
+# test/stub/ has just enough of the z88dk headers to build them here.
 test/test_screen: test/test_screen.c tcp_chat.c tcp.h ip.h
 	$(CC) $(CFLAGS) -I test/stub -I . -o $@ $<
 
-test: test/test_screen
+test/test_irc: test/test_irc.c irc.c tcp.h ip.h
+	$(CC) $(CFLAGS) -I test/stub -I . -o $@ $<
+
+test: test/test_screen test/test_irc
 	./test/test_screen
+	./test/test_irc
 
 clean:
-	$(RM) *.o ../*.o *.tap *.bin $(HOSTPROGRAMS) test/test_screen
+	$(RM) *.o ../*.o *.tap *.bin $(HOSTPROGRAMS) test/test_screen \
+	      test/test_irc
 
 .PHONY: all clean test
