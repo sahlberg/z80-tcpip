@@ -48,6 +48,7 @@ typedef struct tcp_context {
 int tcp_connect(tcp_context_t *tcp);
 int tcp_send(tcp_context_t *tcp, int len, uint8_t *data, int window);
 int tcp_recv(tcp_context_t *tcp, int len);
+int tcp_recv_timeout(tcp_context_t *tcp, int len, int to);
 
 uint8_t *tcp_rx_buffer(tcp_context_t *tcp);
 uint8_t *tcp_tx_buffer(tcp_context_t *tcp);

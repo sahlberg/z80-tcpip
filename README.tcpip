@@ -227,6 +227,31 @@ If no packet has arrived after ~1s the function will timeout with -EAGAIN.
 
 
 
+int tcp_recv_timeout(tcp_context_t *tcp, int len, int to);
+@ tcp  : Must be connected by tcp_connect()
+@ len  : Maximum amount of data to receive.
+@ to   : How long to wait for a packet, counted in rs232_get() timeouts.
+         tcp_recv() is just this one called with RS232_TPS, i.e. ~1s.
+         Note that recv_packet() performs to-1 reads so a value below 2
+         does not read anything at all.
+Returns: same as tcp_recv().
+-------------------
+Same as tcp_recv() but with an explicit timeout.
+
+This is for applications that have something else to do than to sit in
+the serial port for a whole second at a time, for example a chat client
+that has to read a keyboard as well (see tcp_chat.c). Such an
+application polls with a short timeout and keeps a window open towards
+the peer between the polls, since the peer will not send us anything
+while the window is closed.
+
+Note that the serial port has no receive buffer, so anything that
+arrives while we are not inside rs232_get() is lost. An application that
+polls like this should do as little as possible between the polls and
+rely on the peer retransmitting what we missed.
+
+
+
 uint8_t *tcp_rx_buffer(tcp_context_t *tcp);
 --------------------------
 This function returns a pointer to the received payload.
@@ -246,3 +271,77 @@ On FUSE Interface1, if there is no data to read then each rs232_get() takes
 if there is no data to receive.
 We possibly need to check how long rs232_get() for an idle serial port takes
 for all other interfaces as well.
+
+
+
+tcp_chat
+========
+tcp_chat.c is a chat client. Point it at a
+        ncat --chat -l <port>
+on the linux side of slip-tun and you can talk to whoever else is
+connected to it. Any other line oriented tcp service works too.
+
+It asks for the ip address and the port of the server, connects, and then
+uses the bottom line of the screen as the line you type on and all the
+lines above it as the chat log.
+
+Keys:
+  ENTER           send the line
+  CAPS SHIFT + 0  erase the last character (CAPS SHIFT + 5 also works)
+  CAPS SHIFT + SYM SHIFT + C   quit
+
+Typing and receiving at the same time
+-------------------------------------
+There is no OS, no threads and no interrupts we can use here, so both
+things are done from one single polling loop.
+
+The keyboard is read with in_GetKey() which scans the keyboard ports
+directly. We can not use scanf()/fgetc_cons() while connected because
+those read the ROMs LAST-K system variable, and LAST-K is only updated by
+the 50Hz interrupt routine. rs232_get() runs with interrupts disabled for
+most of the time we are connected, so those interrupts almost never
+happen and LAST-K is as good as dead.
+in_GetKey() counts debounce and key repeat in "number of calls", so the
+in_Key* variables are tuned for the ~40 calls per second that the loop
+ends up doing.
+
+The connection is polled with tcp_recv_timeout() using a timeout of a
+couple of rs232_get() timeouts (~25ms) instead of the ~1s that tcp_recv()
+would wait, so that we get back to the keyboard often enough to not miss
+a keypress.
+
+Unlike the rest of the stack, which keeps the window closed and only
+opens it for the duration of one tcp_recv(), a chat client has to be
+ready to receive at any time. So it keeps a window open while idle and
+re-opens it every time the stack has closed it again. Since the serial
+port has no receive buffer this only works because the loop spends
+almost all of its time inside rs232_get(); whatever arrives in the gaps
+is lost and is retransmitted by the peer.
+
+The screen
+----------
+The z88dk console driver scrolls the whole screen when a newline is
+printed on the last row and it has no notion of a scrolling region. So a
+line is added to the chat log by printing it on the input row and
+following it with a newline, which lifts it up into the log and leaves
+the bottom row free for the input line to be redrawn on.
+
+Note that the +zx console is 64 columns wide by default (the 4x8 font).
+Building with "#pragma output CLIB_ZX_CONIO32 = 1" gives the normal 32
+column screen instead, in which case SCREEN_COLS in tcp_chat.c has to be
+changed to match.
+
+
+Tests
+=====
+The screen and input handling in tcp_chat.c can be tested on the host:
+
+        make test
+
+test/test_screen.c emulates the z88dk console driver (the same control
+codes, wrapping and scrolling) and #includes tcp_chat.c so that the real
+code is what is being tested. The stubs it needs for the z88dk headers
+are in test/stub/.
+
+This does not test any of the networking, only that what ends up on the
+screen is what we intended.

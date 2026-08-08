@@ -149,6 +149,25 @@ int tcp_send(tcp_context_t *tcp, int len, uint8_t *data, int window)
  */
 int tcp_recv(tcp_context_t *tcp, int len)
 {
+        return tcp_recv_timeout(tcp, len, RS232_TPS);
+}
+
+
+/* tcp_recv_timeout
+ * Same as tcp_recv() but with an explicit timeout, expressed as the
+ * number of rs232_get() timeouts to wait for a packet. See RS232_TPS,
+ * which is what tcp_recv() uses and which is our idea of "one second".
+ *
+ * This is for applications that have something else to do than to sit in
+ * the serial port for a whole second at a time, such as reading a
+ * keyboard. Note that recv_packet() performs to-1 reads, so a timeout
+ * below 2 does not read anything at all.
+ *
+ * Polling like this is only useful while a window is open towards the
+ * peer, since the peer will not send us anything otherwise.
+ */
+int tcp_recv_timeout(tcp_context_t *tcp, int len, int to)
+{
         uint8_t *ptr;
         uint32_t seq, ack;
         int i;
@@ -164,7 +183,7 @@ int tcp_recv(tcp_context_t *tcp, int len)
 
  again:        
         ptr = ip_buffer(&tcp->ip, 0);
-        len = recv_packet(ptr, tcp->ip.pkt_size, RS232_TPS);
+        len = recv_packet(ptr, tcp->ip.pkt_size, to);
         if (len < 0) {
                 return len;
         }
