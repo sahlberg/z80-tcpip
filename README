@@ -71,6 +71,7 @@ Slip is implemented in slip.c.
 =============
 Use this define when compiling for FUSE Spectrum + Interface1.
 Both the stack itself as well as slip-tun.c
+This adds the special "escape the 0x00 characters" we need on FUSE.
 
 
 slip-tun
@@ -93,16 +94,7 @@ If they do not already exist they are created as fifos.
 -v logs every packet that is bridged in either direction.
 
 Example:
-# In first console :
-gcc slip-tun.c -o slip-tun -DSLIP_ESC_00
-sudo ./slip-tun tun0 /tmp/rx /tmp/tx
-
-# In a second console
-fuse --rs232-tx=/tmp/tx --rs232-rx=/tmp/rx
-
-
-NET.sh
-------
+--------
 Use NET.sh rather than invoking slip-tun by hand. It builds slip-tun with
 the right defines, starts it on tun0 with /tmp/rx and /tmp/tx, and - the
 part you cannot do by running slip-tun directly - sets up the host so the
@@ -325,6 +317,17 @@ if there is no data to receive.
 We possibly need to check how long rs232_get() for an idle serial port takes
 for all other interfaces as well.
 
+
+
+
+EXAMPLE UTILS
+=============
+
+ping
+====
+Ping is a simple tool to test if a host is reachable.
+You type in the ip address of the host and then the tool
+tells you if it is alive or not.
 
 
 tcp_chat
