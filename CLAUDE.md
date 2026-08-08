@@ -38,6 +38,15 @@ between the Z80 side and `slip-tun`.
 fuse --rs232-tx=/tmp/tx --rs232-rx=/tmp/rx  # in a second console
 ```
 
+Always go through `NET.sh` rather than running `slip-tun` by hand. Besides
+building and starting the bridge it enables `ip_forward` and installs the
+MASQUERADE / FORWARD rules without which the Spectrum can only reach 192.0.2.1
+(192.0.2.0/24 is TEST-NET-1, so nothing routes a reply back to it). The rules
+are removed again on exit, so stop it with ^C. Note that outbound packets are
+re-injected by `slip-tun` on a raw `IP_HDRINCL` socket and therefore never
+traverse FORWARD — only POSTROUTING — while the replies *are* forwarded out
+`tun0`; see "Reaching the outside world" in `README.tcpip`.
+
 The Spectrum side is hardcoded to 192.0.2.2; `slip-tun` owns the other end of
 the tun device. Pass `-v` to `slip-tun` to log every packet.
 

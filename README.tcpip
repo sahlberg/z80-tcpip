@@ -100,7 +100,25 @@ sudo ./slip-tun tun0 /tmp/rx /tmp/tx
 # In a second console
 fuse --rs232-tx=/tmp/tx --rs232-rx=/tmp/rx
 
-(NET.sh does the same thing.)
+
+NET.sh
+------
+Use NET.sh rather than invoking slip-tun by hand. It builds slip-tun with
+the right defines, starts it on tun0 with /tmp/rx and /tmp/tx, and - the
+part you cannot do by running slip-tun directly - sets up the host so the
+spectrum can reach anything other than 192.0.2.1. See "Reaching the outside
+world" below.
+
+# In first console :
+./NET.sh          # or ./NET.sh -v to log every packet
+
+# In a second console
+fuse --rs232-tx=/tmp/tx --rs232-rx=/tmp/rx
+
+NET.sh needs sudo, both for slip-tun itself and for the firewall rules. It
+removes the rules again when it exits, so stop it with ^C rather than
+killing it, otherwise they are left behind. Re-running it is harmless
+either way, the rules are only added if they are not already there.
 
 
 Addressing
@@ -113,6 +131,41 @@ Packets that arrive on the tun interface are only forwarded to the
 spectrum if they are IPv4 and addressed to 192.0.2.2. Packets coming
 back from the spectrum are injected onto the real network using a raw
 socket, which is why slip-tun needs to run as root.
+
+
+Reaching the outside world
+--------------------------
+Out of the box the spectrum can only talk to 192.0.2.1, the host end of
+the link. 192.0.2.0/24 is TEST-NET-1 and nothing on the internet will
+route a reply back to it, so to reach anything else the host has to
+forward and masquerade for us. slip-tun does not do this itself, it only
+brings the interface up - NET.sh is what installs the rules :
+
+  sysctl -w net.ipv4.ip_forward=1
+  iptables -t nat -A POSTROUTING -s 192.0.2.0/24 ! -o tun0 -j MASQUERADE
+  iptables -I FORWARD 1 -o tun0 -j ACCEPT
+  iptables -I FORWARD 1 -i tun0 -j ACCEPT
+
+The two directions are not symmetric, which is worth knowing if you ever
+have to debug this :
+
+Packets from the spectrum are not routed at all. slip-tun re-injects them
+with a raw IP_HDRINCL socket, so as far as the kernel is concerned they
+are locally generated and they only traverse OUTPUT and POSTROUTING, never
+FORWARD. POSTROUTING still sees them, which is why MASQUERADE works, but
+a FORWARD rule on its own would do nothing for this direction.
+
+The replies do take the normal path. They arrive on the uplink addressed
+to the host, conntrack undoes the masquerade back to 192.0.2.2, and the
+kernel then forwards them out tun0 - so the "-o tun0" FORWARD rule is the
+one that actually matters. The "-i tun0" rule is not needed today but is
+there in case the raw socket is ever replaced by plain routing.
+
+The FORWARD rules are inserted at the head of the chain so they win over
+any DROP that docker or libvirt may have added. Note that netfilter
+requires every hooked chain to accept: if pings out still fail, check
+whether some other nftables table has a forward chain with "policy drop",
+because an ACCEPT in the filter table cannot override that.
 
 
 Attaching and detaching
