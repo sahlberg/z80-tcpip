@@ -1,9 +1,17 @@
 A tiny TCP/IP stack for Z80
 ===========================
 Or calling it a TCPIP stack might be a stretch.
-It is something that under favorable conditions
-have some degree of interoperability with a TCPIP
+It is a half-duplex stack that under favorable conditions
+has some degree of interoperability with a TCPIP
 peer.
+Half-duplex as in it can either receive data or it can
+transmit data but not both at the same time and using a single
+shared buffer for both RX and TX.
+
+(If your stack is picky about the peer playing games with the advertized
+ window you are not going to have a good time talking to this stack.
+ But it is small, so there is that.)
+ 
 
 It is designed to be as small as possible but still capable to
 exchange data with a TCP endpoint.
