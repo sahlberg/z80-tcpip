@@ -207,10 +207,10 @@ The stack only supports a single TCP connection.
 -DRS232_TPS=xyz
 ---------------
 If there is no data to read rs232_get() will eventually timeout.
-We need to know how log this timeout is so that we can detect when we need to do a
-retransmission or when the application wants to abort the TCP operation.
-This define specifies how many timedout calls to rs232_get() per second and this
-will be different for every rs232 implementation.
+We need to know how long this timeout is so that we can detect when we need
+to do a retransmission or when the application wants to abort the TCP
+operation. This define specifies how many timedout calls to rs232_get() per
+second and this will be different for every rs232 implementation.
 
 For Spectrum Interface1 this should be set to 80.
 I.e. -DRS232_TPS=80
@@ -218,6 +218,8 @@ I.e. -DRS232_TPS=80
 For other serial ports you will need to etermine what this value should be.
 (It does not have to be very accurate.)
 
+The rs232_get() timeout is basically what we use as a very very crude
+clock/timer.
 
 int tcp_connect(tcp_context_t *tcp);
 ------------------------------------
